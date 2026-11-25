@@ -34,12 +34,26 @@ for(const text of ['SGD 40','SGD 50','SGD 60','SGD 70','SGD 80/CBM','SGD 1.80','
 for(const keyword of ['China to Singapore Shipping Rates','Sea Freight Rates China to Singapore','China to Singapore Air Freight Rates'])assert.ok(rates.toLowerCase().includes(keyword.toLowerCase()),`rates page missing keyword ${keyword}`);
 const calculator=fs.readFileSync(path.join(root,'shipping-calculator/index.html'),'utf8');
 for(const keyword of ['Shipping Cost &amp; CBM Calculator','shipping cost calculator Singapore','CBM calculator'])assert.ok(calculator.toLowerCase().includes(keyword.toLowerCase()),`calculator page missing keyword ${keyword}`);
+assert.match(rates,/For each package, use the greater of actual weight and volumetric weight/,'small-parcel final rule in English');
+assert.match(rates,/每件货物分别比较实际重量与体积重量并取较大值/,'small-parcel final rule in Chinese');
+assert.match(rates,/Add all actual weights and all volumetric weights separately/,'air-freight final rule in English');
+assert.match(rates,/分别汇总所有货物的实际总重量和总体积重量/,'air-freight final rule in Chinese');
+assert.doesNotMatch(rates,/Pending confirmation:|待确认：/,'no obsolete pending billing rule');
+assert.match(calculator,/海运小件：每件货物分别比较实际重量与体积重量/,'calculator small-parcel explanation');
+assert.match(calculator,/空运：分别计算整票实际总重量和总体积重量/,'calculator air-freight explanation');
+assert.doesNotMatch(calculator,/confirmedWeight|Layout Fix V3|layout-version/,'no obsolete manual override or temporary marker');
+assert.match(calculator,/calculator-layout-v3\.css\?v=[^"']+/,'versioned V3 layout stylesheet');
+assert.match(calculator,/shipping-calculator\.js\?v=[^"']+/,'versioned calculator script');
+assert.ok(fs.existsSync(path.join(root,'assets/calculator-layout-v3.css')),'V3 layout stylesheet exists');
 
 const sitemap=fs.readFileSync(path.join(root,'sitemap.xml'),'utf8');
 assert.equal((sitemap.match(/<url>/g)||[]).length,8,'sitemap URL count');
 assert.match(sitemap,/shipping-rates\//);assert.match(sitemap,/shipping-calculator\//);
 const sea=fs.readFileSync(path.join(root,'sea-freight-china-to-singapore/index.html'),'utf8');
 assert.match(sea,/12–15 working days/,'sea freight transit update');
+assert.match(sea,/each piece uses the greater of actual and volumetric weight/,'sea FAQ final small-parcel rule');
+const air=fs.readFileSync(path.join(root,'air-freight-china-to-singapore/index.html'),'utf8');
+assert.match(air,/total actual weight and total volumetric weight are calculated separately/,'air FAQ final rule');
 for(const relative of ['index.html','sea-freight-china-to-singapore/index.html','air-freight-china-to-singapore/index.html','furniture-shipping-china-to-singapore/index.html','building-materials-shipping-to-singapore/index.html','machinery-shipping-china-to-singapore/index.html']){
   const html=fs.readFileSync(path.join(root,relative),'utf8');
   assert.match(html,/href="\/shipping-rates\//,`${relative}: rates link`);

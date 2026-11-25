@@ -21,14 +21,16 @@
   function summarize(packages){
     const normalized=validatePackages(packages);
     return normalized.reduce((total,item)=>{
-      const volumeCm3=item.lengthCm*item.widthCm*item.heightCm*item.quantity;
+      const unitVolumeCm3=item.lengthCm*item.widthCm*item.heightCm;
+      const volumeCm3=unitVolumeCm3*item.quantity;
       total.packageCount+=item.quantity;
       total.volumeCm3+=volumeCm3;
       total.actualWeight+=item.weightKg*item.quantity;
       total.volumetricWeight+=volumeCm3/6000;
+      total.smallParcelWeight+=Math.max(item.weightKg,unitVolumeCm3/6000)*item.quantity;
       total.airlineSurcharge=total.airlineSurcharge||item.weightKg>30+EPSILON||item.lengthCm>150+EPSILON;
       return total;
-    },{packageCount:0,volumeCm3:0,actualWeight:0,volumetricWeight:0,airlineSurcharge:false,packages:normalized});
+    },{packageCount:0,volumeCm3:0,actualWeight:0,volumetricWeight:0,smallParcelWeight:0,airlineSurcharge:false,packages:normalized});
   }
 
   function calculateBulky(summary){
@@ -44,13 +46,11 @@
     return{mode:'bulky',packageCount:summary.packageCount,actualVolume,chargeableVolume,actualWeight:summary.actualWeight,volumetricWeight:summary.volumetricWeight,chargeableWeight:null,baseFreight:roundMoney(baseFreight),surcharge:0,total:roundMoney(baseFreight),transit:'12–15 working days',provisional:false};
   }
 
-  function calculateSmall(summary,options){
-    const supplied=Number(options&&options.confirmedChargeableWeight);
-    const hasConfirmed=Number.isFinite(supplied)&&supplied>0;
-    const chargeableWeight=hasConfirmed?supplied:Math.max(summary.actualWeight,summary.volumetricWeight);
+  function calculateSmall(summary){
+    const chargeableWeight=ceilKg(summary.smallParcelWeight);
     const surcharge=chargeableWeight<10-EPSILON?6:0;
     const baseFreight=chargeableWeight*1.8;
-    return{mode:'small',packageCount:summary.packageCount,actualVolume:summary.volumeCm3/1000000,chargeableVolume:null,actualWeight:summary.actualWeight,volumetricWeight:summary.volumetricWeight,chargeableWeight,baseFreight:roundMoney(baseFreight),surcharge,total:roundMoney(baseFreight+surcharge),transit:'12–15 working days',provisional:!hasConfirmed,notice:'Non-integer rounding and multi-package chargeable-weight combination are pending confirmation. No automatic kilogram rounding has been applied.'};
+    return{mode:'small',packageCount:summary.packageCount,actualVolume:summary.volumeCm3/1000000,chargeableVolume:null,actualWeight:summary.actualWeight,volumetricWeight:summary.volumetricWeight,chargeableWeight,baseFreight:roundMoney(baseFreight),surcharge,total:roundMoney(baseFreight+surcharge),transit:'12–15 working days',provisional:false};
   }
 
   function airRate(weight){
@@ -66,21 +66,22 @@
     const chargeableWeight=ceilKg(Math.max(summary.actualWeight,summary.volumetricWeight));
     const baseFreight=airRate(chargeableWeight);
     const surcharge=summary.airlineSurcharge?60:0;
-    return{mode:'air',packageCount:summary.packageCount,actualVolume:summary.volumeCm3/1000000,chargeableVolume:null,actualWeight:summary.actualWeight,volumetricWeight:summary.volumetricWeight,chargeableWeight,baseFreight:roundMoney(baseFreight),surcharge,total:roundMoney(baseFreight+surcharge),transit:'3–6 days',provisional:summary.packageCount>1,notice:summary.packageCount>1?'The multi-package chargeable-weight combination method is pending final confirmation; this is a reference estimate using the greater of total actual and total volumetric weight.':''};
+    return{mode:'air',packageCount:summary.packageCount,actualVolume:summary.volumeCm3/1000000,chargeableVolume:null,actualWeight:summary.actualWeight,volumetricWeight:summary.volumetricWeight,chargeableWeight,baseFreight:roundMoney(baseFreight),surcharge,total:roundMoney(baseFreight+surcharge),transit:'3–6 days',provisional:false};
   }
 
-  function calculate(mode,packages,options={}){
+  function calculate(mode,packages){
     const summary=summarize(packages);
     if(mode==='bulky')return calculateBulky(summary);
-    if(mode==='small')return calculateSmall(summary,options);
+    if(mode==='small')return calculateSmall(summary);
     if(mode==='air')return calculateAir(summary);
     throw new Error('Select a shipping mode.');
   }
 
   function buildQuoteMessage(result,packages,extras={}){
     const labels={bulky:'Sea Freight – Bulky Cargo',small:'Sea Freight – Small Parcels',air:'Air Freight'};
+    const rules={bulky:'Add all packed volume, then round up to the next 0.1 CBM.',small:'For each package, use the greater of actual and volumetric weight; add all chargeable weights, then round the total up to a whole KG.',air:'Compare total actual weight with total volumetric weight; use the greater total, then round up to a whole KG.'};
     const packageLines=packages.map((item,index)=>`Package group ${index+1}: ${item.length} × ${item.width} × ${item.height} ${String(item.unit||'cm').toUpperCase()}, ${item.weight} KG each, quantity ${item.quantity}`);
-    const rows=["Hi Jasper, I'd like to confirm a China-to-Singapore shipping quote.",`Shipping mode: ${labels[result.mode]}`,'',...packageLines,'',`Total packages: ${result.packageCount}`,`Actual total volume: ${Number(result.actualVolume).toFixed(4)} CBM`,result.chargeableVolume!==null?`Chargeable volume: ${Number(result.chargeableVolume).toFixed(1)} CBM`:`Volumetric weight: ${Number(result.volumetricWeight).toFixed(2)} KG`,result.chargeableWeight!==null?`Reference chargeable weight: ${Number(result.chargeableWeight).toFixed(2)} KG`:'',`Reference freight: S$${Number(result.total).toFixed(2)} (import GST excluded)`,`Cargo type: ${String(extras.cargoType||'').trim()||'Not provided'}`,`Singapore delivery address / postcode: ${String(extras.delivery||'').trim()||'Not provided'}`,'Please confirm cargo acceptance, final measurements, applicable charges and GST.'];
+    const rows=["Hi Jasper, I'd like to confirm a China-to-Singapore shipping quote.",`Shipping mode: ${labels[result.mode]}`,`Billing rule: ${rules[result.mode]}`,'',...packageLines,'',`Total packages: ${result.packageCount}`,`Actual total volume: ${Number(result.actualVolume).toFixed(4)} CBM`,result.chargeableVolume!==null?`Chargeable volume: ${Number(result.chargeableVolume).toFixed(1)} CBM`:`Volumetric weight: ${Number(result.volumetricWeight).toFixed(2)} KG`,result.chargeableWeight!==null?`Reference chargeable weight: ${Number(result.chargeableWeight).toFixed(2)} KG`:'',`Reference freight: S$${Number(result.total).toFixed(2)} (import GST excluded)`,`Cargo type: ${String(extras.cargoType||'').trim()||'Not provided'}`,`Singapore delivery address / postcode: ${String(extras.delivery||'').trim()||'Not provided'}`,'Please confirm cargo acceptance, final measurements, applicable charges and GST.'];
     return rows.filter(Boolean).join('\n');
   }
 
@@ -90,7 +91,7 @@
 (function(){
   'use strict';
   if(typeof document==='undefined'||!document.getElementById('shippingCalculator'))return;
-  const api=window.AnsudaRates,form=document.getElementById('shippingCalculator'),list=document.getElementById('packageList'),template=document.getElementById('packageTemplate'),mode=document.getElementById('shippingMode'),confirmedWrap=document.getElementById('confirmedWeightWrap'),error=document.getElementById('calculatorError'),quoteLink=document.getElementById('calculatorWhatsApp');
+  const api=window.AnsudaRates,form=document.getElementById('shippingCalculator'),list=document.getElementById('packageList'),template=document.getElementById('packageTemplate'),mode=document.getElementById('shippingMode'),error=document.getElementById('calculatorError'),quoteLink=document.getElementById('calculatorWhatsApp');
   let currentLang=new URLSearchParams(location.search).get('lang')==='zh'?'zh':'en',lastResult=null;
   const money=value=>`S$${Number(value).toFixed(2)}`;
   const number=(value,digits=2)=>Number(value).toLocaleString('en-SG',{maximumFractionDigits:digits});
@@ -132,11 +133,10 @@
     return'https://wa.me/8613250506198?text='+encodeURIComponent(message);
   }
 
-  form.addEventListener('submit',event=>{event.preventDefault();error.classList.remove('visible');try{const result=api.calculate(mode.value,packagesFromForm(),{confirmedChargeableWeight:document.getElementById('confirmedWeight').value});render(result);document.getElementById('results').scrollIntoView({behavior:'smooth',block:'start'})}catch(err){error.textContent=currentLang==='zh'?`${text.zh.invalid} ${err.message}`:err.message||text.en.invalid;error.classList.add('visible');quoteLink.setAttribute('aria-disabled','true')}});
+  form.addEventListener('submit',event=>{event.preventDefault();error.classList.remove('visible');try{const result=api.calculate(mode.value,packagesFromForm());render(result);document.getElementById('results').scrollIntoView({behavior:'smooth',block:'start'})}catch(err){error.textContent=currentLang==='zh'?`${text.zh.invalid} ${err.message}`:err.message||text.en.invalid;error.classList.add('visible');quoteLink.setAttribute('aria-disabled','true')}});
   document.getElementById('addPackage').addEventListener('click',()=>addPackage());
-  mode.addEventListener('change',()=>{confirmedWrap.hidden=mode.value!=='small'});
   const langBtn=document.getElementById('langBtn');if(langBtn)langBtn.addEventListener('click',()=>applyLanguage(currentLang==='en'?'zh':'en'));
   const menu=document.getElementById('menu'),links=document.getElementById('navlinks');if(menu&&links){menu.addEventListener('click',()=>{const open=menu.getAttribute('aria-expanded')==='true';menu.setAttribute('aria-expanded',String(!open));menu.textContent=open?'☰':'×';links.classList.toggle('open',!open)});links.querySelectorAll('a').forEach(link=>link.addEventListener('click',()=>{links.classList.remove('open');menu.setAttribute('aria-expanded','false');menu.textContent='☰'}))}
   document.querySelectorAll('[data-year]').forEach(el=>{el.textContent=new Date().getFullYear()});
-  addPackage();applyLanguage(currentLang);mode.dispatchEvent(new Event('change'));
+  addPackage();applyLanguage(currentLang);
 })();
