@@ -8,3 +8,5 @@
 @media(max-width:900px){.facts-grid,.photo-gallery{grid-template-columns:minmax(0,1fr)}.photo-card.wide{grid-column:auto}}@media(max-width:420px){.info-band{padding:20px}.faq-list details{padding:0 15px}.faq-list summary{padding-right:25px}.photo-section{padding-top:28px}.photo-card figcaption{font-size:13px}}
 
 @media(max-width:420px){.photo-section{padding-bottom:84px}.photo-card:last-child figcaption{min-height:72px;padding-right:80px}}
+
+.related{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
