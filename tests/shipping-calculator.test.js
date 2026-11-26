@@ -73,4 +73,9 @@ assert.match(airQuote,/Compare total actual weight with total volumetric weight/
 const waUrl='https://wa.me/8613250506198?text='+encodeURIComponent(quote);
 assert.match(waUrl,/^https:\/\/wa\.me\/8613250506198\?text=/);assert.equal(decodeURIComponent(waUrl.split('?text=')[1]),quote);
 
-console.log('Passed 37 retained calculator scenario groups plus 10 final-rule regression groups (47 total).');
+assert.throws(()=>rates.calculate('bulky',[{length:Infinity,width:1,height:1,unit:'cm',weight:1,quantity:1}]),/complete every required field/);
+assert.throws(()=>rates.calculate('bulky',[{length:1e308,width:1,height:1,unit:'cm',weight:1,quantity:1}]),/supported calculation range/);
+assert.throws(()=>rates.calculate('bulky',[{length:1e8,width:1e8,height:1e8,unit:'cm',weight:1,quantity:1}]),/supported calculation range/);
+assert.throws(()=>rates.safeCalculation(Number.NaN,'Test value'),/supported calculation range/);
+
+console.log('Passed 47 original calculator scenario groups plus 4 finite-range safety regressions (51 total).');
